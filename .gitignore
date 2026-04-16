@@ -1,0 +1,19 @@
+# Environments
+.venv/
+env/
+venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Build and distribution
+build/
+dist/
+*.egg-info/
+
+# Testing and linting caches
+.pytest_cache/
+.ruff_cache/
+.coverage

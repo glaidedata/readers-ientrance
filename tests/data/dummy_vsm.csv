@@ -1,0 +1,12 @@
+Lake Shore VSM Measurement
+#RUN ON SOFTWARE VERSION
+Version 1.4.2
+#FORC MEASUREMENT
+ID: Dummy_Sample_001
+Mass: 0.123
+Volume: 0.05
+##DATA TABLE
+Step, Iteration, Segment, Field [Oe], Moment (m) [emu], Time Stamp [s], Field Status, Moment (m) Status
+1, 1, 1, 100.5, 0.0015, 10.1, OK, OK
+2, 1, 1, 200.0, 0.0030, 11.2, OK, OK
+3, 1, 1, 300.5, 0.0045, 12.3, OK, OK
