@@ -1,0 +1,88 @@
+MicroMag 2900/3900 Data File (Series 0016.002)
+Direct moment vs. field; Multiple segments
+
+INSTRUMENT
+Configuration                   AGM
+Temperature control             None
+Hardware version                0004
+Software version                10/09/2010
+Units of measure                cgs
+Temperature in                  Celsius
+
+SAMPLE
+Mass                            0.123
+Volume                          N/A
+Demagnetizing factor            N/A
+
+SETTINGS
+Field range                    +10.00000E+03
+Field (command)                 N/A
+Moment range                   +500.0000E-06
+Averaging time                  N/A
+Temperature (command)           N/A
+Tmprtr difference correction    No
+Orientation                     N/A
+Gradient                        1
+Probe factor                   +149.3465E-03
+Probe Q                        +35.30363E+00
+Probe resonance                +406.4589E+00
+Operating frequency            +406.5000E+00
+Sweep mode                      Automatic
+
+MEASUREMENT
+Description                    "Dummy Sample Data"
+Field (measured)                N/A
+Temperature (measured)          N/A
+Averages (completed)            N/A
+Measured on                     01/15/2024  16:49
+Elapsed time                   +95.42844E+00
+
+PROCESSING
+Background subtraction          No
+Delta-m processing              N/A
+Demagnetizing factor            No
+Normalization                   by moment
+Normalization factor           +2.995360E+03
+Offset (field)                  No
+Offset (moment)                 No
+Pole saturation                 No
+Slope correction                No
+
+VIEWPORT
+Left                           -5.000000E+03
+Right                          +5.000000E+03
+Bottom                         -1.100000E+00
+Top                            +1.100000E+00
+Show X-axis?                    Yes
+Show Y-axis?                    Yes
+
+CHARACTERIZATION
+Initial slope                   N/A
+Saturation                     +1.000002E+00
+Remanence                      +582.8960E-03
+Coercivity                     +8.929474E+00
+S* -61.70390E-03
+
+SCRIPT
+Number of segments              7
+Number of data                  3
+
+Segment   Averaging      Initial        Field         Final                    Final 
+ Number      Time         Field       Increment       Field         Pause      Index 
+             (s)           (Oe)          (Oe)          (Oe)          (s)       
+0000001,+100.0000E-03, 0.000000E+00,+999.9999E+00,+5.000000E+03,+1.000000E+00,0000000
+0000002,+100.0000E-03,+5.000000E+03,+100.0000E+00,+500.0000E+00, 0.000000E+00,0000046
+0000003,+100.0000E-03,+500.0000E+00,+3.000000E+00,-500.0000E+00, 0.000000E+00,0000381
+0000004,+100.0000E-03,-500.0000E+00,+100.0000E+00,-5.000000E+03, 0.000000E+00,0000427
+0000005,+100.0000E-03,-5.000000E+03,+100.0000E+00,-500.0000E+00, 0.000000E+00,0000473
+0000006,+100.0000E-03,-500.0000E+00,+3.000000E+00,+500.0000E+00, 0.000000E+00,0000808
+0000007,+100.0000E-03,+500.0000E+00,+100.0000E+00,+5.000000E+03, 0.000000E+00,0000854
+
+                              Normalized 
+    Field         Moment        Moment   
+     (Oe)         (emu)          (*)     
++5.005130E+03,+333.3056E-06,+998.3703E-03
++4.906601E+03,+333.1881E-06,+998.0183E-03
++4.805807E+03,+333.6658E-06,+999.4493E-03
+
+MicroMag 2900/3900 Data File ends
