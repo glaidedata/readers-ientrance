@@ -1,9 +1,23 @@
 import pandas as pd
+import numpy as np
 import re
 import io
+from pydantic import BaseModel, Field, ConfigDict
+from typing import Dict, Any, Optional
 
 
-def read_micromag_agm(filepath: str):
+class AGMData(BaseModel):
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+    segments: Optional[pd.DataFrame] = None
+    magnetic_field: Optional[np.ndarray] = None
+    magnetic_moment: Optional[np.ndarray] = None
+    normalized_moment: Optional[np.ndarray] = None
+
+    # Fix for Pydantic V2 to allow DataFrames and NumPys
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+
+def read_micromag_agm(filepath: str) -> AGMData:
     metadata = {}
     segment_data_lines = []
     main_data_lines = []
@@ -109,11 +123,11 @@ def read_micromag_agm(filepath: str):
     )
     main_df = main_df.dropna()
 
-    # Return everything neatly packaged
-    return {
-        "metadata": metadata,
-        "segments": segment_df,
-        "magnetic_field": main_df["magnetic_field"].values,
-        "magnetic_moment": main_df["magnetic_moment"].values,
-        "normalized_moment": main_df["normalized_moment"].values,
-    }
+    # Return the strict Pydantic model
+    return AGMData(
+        metadata=metadata,
+        segments=segment_df,
+        magnetic_field=main_df["magnetic_field"].values,
+        magnetic_moment=main_df["magnetic_moment"].values,
+        normalized_moment=main_df["normalized_moment"].values,
+    )
