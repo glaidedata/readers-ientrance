@@ -107,5 +107,6 @@ def read_micromag_agm(filepath: str):
         "metadata": metadata,
         "segments": segment_df,
         "magnetic_field": main_df['magnetic_field'].values,
-        "magnetic_moment": main_df['magnetic_moment'].values
+        "magnetic_moment": main_df['magnetic_moment'].values,
+        "normalized_moment": main_df['normalized_moment'].values
     }
