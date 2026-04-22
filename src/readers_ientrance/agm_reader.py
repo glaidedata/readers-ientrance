@@ -88,7 +88,8 @@ def read_micromag_agm(filepath: str) -> AGMData:
                     continue
 
                 # Split by 2 or more spaces
-                parts = re.split(r"\s{2,}", line_stripped)
+                parts = re.split(r"\s{2,}", line_stripped, maxsplit=1)
+                
                 if len(parts) == 2:
                     key, val = parts[0].strip(), parts[1].strip()
                     metadata[key] = val
