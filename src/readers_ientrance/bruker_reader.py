@@ -64,7 +64,6 @@ def read_bruker(file_path: str) -> BrukerAFMData:
                 # Handle Bruker's special '@' lines (e.g., @2:Image Data: S [Height] "Height")
                 if line_content.startswith('@'):
                     content = line_content[1:]
-                    # Regex extracts the true key (ignoring the "2:") and the value
                     match = re.match(r'(?:[0-9]+:)?(.*?):(.*)', content)
                     if match:
                         key = match.group(1).strip()
@@ -79,7 +78,7 @@ def read_bruker(file_path: str) -> BrukerAFMData:
                 else:
                     continue
                 
-                # Store it
+                # Store it in the local block (useful for image-specific metadata)
                 current_block[key] = val
                 
                 # --- Specific Image Extraction Logic ---
@@ -96,13 +95,20 @@ def read_bruker(file_path: str) -> BrukerAFMData:
                         current_block['y_res'] = int(val)
                     elif key == "Line Direction":
                         current_block['direction'] = val
-                    elif key == "Image Data":  # <--- This now correctly matches!
+                    elif "Image Data" in key: 
                         match = re.search(r'\"(.*?)\"', val)
                         if match:
                             current_block['channel_name'] = match.group(1)
                 
                 # --- Global Metadata Extraction ---
                 else:
+                    # 🌟 THE MAGIC LINE 🌟
+                    # This dumps EVERY single key from the header into our dictionary
+                    # so the schema's 'raw_metadata' catch-all and specific lookups work perfectly.
+                    metadata[key] = val
+                    
+                    # We keep these specific aliases so the base AFM properties 
+                    # (like instrument_model and probe_id) continue to map cleanly.
                     if key == "Microscope":
                         metadata['instrument_model'] = val
                     elif key == "Tip Serial Number":

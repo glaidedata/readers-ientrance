@@ -15,10 +15,12 @@ def dummy_bruker_file(tmp_path: Path) -> str:
     header_text = (
         r"\*File list" + "\n"
         r"\Microscope: MultiMode 8" + "\n"
+        r"\Scanner file: 9575jvlr.scn" + "\n"      # <-- Added to test Catch-All
+        r"\Operating mode: PeakForce QNM" + "\n"   # <-- Added to test Catch-All
         r"\Scan Size: 10000 nm" + "\n"
         r"\Tip Radius: 15.5" + "\n"
         r"\*Ciao image list" + "\n"
-        r"\Data offset: 500" + "\n"
+        r"\Data offset: 500" + "\n"  
         r"\Data length: 8" + "\n"    
         r"\Bytes/pixel: 2" + "\n"
         r"\Samps/line: 2" + "\n"     
@@ -53,11 +55,15 @@ def test_bruker_reader_global_metadata(dummy_bruker_file):
     # Assert it returns the correct Pydantic model
     assert isinstance(afm_data, BrukerAFMData)
     
-    # Assert global metadata
+    # Assert global metadata aliases worked
     assert afm_data.metadata.get("instrument_model") == "MultiMode 8"
     assert afm_data.metadata.get("scan_size") == 10000.0
     assert afm_data.metadata.get("tip_radius") == 15.5
     assert afm_data.metadata.get("File Format") == "Bruker/Nanoscope"
+
+    # Assert the new 1000-line Catch-All logic worked!
+    assert afm_data.metadata.get("Scanner file") == "9575jvlr.scn"
+    assert afm_data.metadata.get("Operating mode") == "PeakForce QNM"
 
 
 def test_bruker_reader_channel_extraction(dummy_bruker_file):
