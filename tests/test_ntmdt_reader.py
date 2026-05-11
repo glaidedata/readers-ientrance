@@ -49,7 +49,7 @@ def test_read_ntmdt_success(mock_from_file, tmp_path):
     
     # A 1D list of [10, 20, 30, 40] with a 2x2 resolution should reshape like this:
     expected_array = np.array([[10, 20], [30, 40]])
-    np.testing.assert_array_equal(result.channels["Height Sensor"], expected_array)
+    np.testing.assert_array_equal(result.channels["Height Sensor"].data, expected_array)
 
 
 def test_read_ntmdt_invalid_extension(tmp_path):
