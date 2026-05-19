@@ -23,7 +23,7 @@ class BrukerAFMData(BaseModel):
 # --- MAIN READER ---
 
 def read_bruker(file_path: str) -> BrukerAFMData:
-    """Reads Bruker/Nanoscope AFM files (.001, .002, .003, .spm, etc.)."""
+    """Reads Bruker/Nanoscope AFM files (Images and Force Curves)."""
     
     metadata = {
         "File Format": "Bruker/Nanoscope",
@@ -33,6 +33,9 @@ def read_bruker(file_path: str) -> BrukerAFMData:
     
     image_blocks = []
     current_block = {}
+
+    # List of block names that contain actual binary offsets
+    target_blocks = ["Ciao image list", "Ciao force image list"]
     
     # 1. Parse the ASCII Header
     with open(file_path, 'rb') as f:
@@ -44,13 +47,13 @@ def read_bruker(file_path: str) -> BrukerAFMData:
             
             # Escape condition: End of the entire header
             if line.startswith(r"\*File list end"):
-                if current_block.get("block_name") == "Ciao image list":
+                if current_block.get("block_name") in target_blocks:
                     image_blocks.append(current_block)
                 break
             
             # Detect a new section block
             if line.startswith(r"\*"):
-                if current_block.get("block_name") == "Ciao image list":
+                if current_block.get("block_name") in target_blocks:
                     image_blocks.append(current_block)
                 
                 block_name = line[2:].strip()
@@ -82,7 +85,7 @@ def read_bruker(file_path: str) -> BrukerAFMData:
                 current_block[key] = val
                 
                 # --- Specific Image Extraction Logic ---
-                if current_block.get("block_name") == "Ciao image list":
+                if current_block.get("block_name") in target_blocks:
                     if key == "Data offset":
                         current_block['offset'] = int(val)
                     elif key == "Data length":
@@ -90,10 +93,10 @@ def read_bruker(file_path: str) -> BrukerAFMData:
                     elif key == "Bytes/pixel":
                         current_block['bytes_per_pixel'] = int(val)
                     elif key == "Samps/line":
-                        current_block['x_res'] = int(val)
+                        current_block['x_res'] = int(val.split()[0])
                     elif key == "Number of lines":
                         current_block['y_res'] = int(val)
-                    elif key == "Line Direction":
+                    elif key == "Line Direction" or key == "Z direction":
                         current_block['direction'] = val
                     elif "Image Data" in key: 
                         match = re.search(r'\"(.*?)\"', val)
@@ -102,7 +105,6 @@ def read_bruker(file_path: str) -> BrukerAFMData:
                 
                 # --- Global Metadata Extraction ---
                 else:
-                    # 🌟 THE MAGIC LINE 🌟
                     # This dumps EVERY single key from the header into our dictionary
                     # so the schema's 'raw_metadata' catch-all and specific lookups work perfectly.
                     metadata[key] = val
@@ -135,10 +137,12 @@ def read_bruker(file_path: str) -> BrukerAFMData:
     # 2. Extract the Binary Matrices
     with open(file_path, 'rb') as f:
         for block in image_blocks:
-            if 'offset' in block and 'x_res' in block and 'y_res' in block:
+            # Force curves do not have a y_res, so we only check for x_res
+            if 'offset' in block and 'x_res' in block:
                 offset = block['offset']
                 x_res = block['x_res']
-                y_res = block['y_res']
+                # Default to 1 if y_res is missing (1D force curve)
+                y_res = block.get('y_res', 1)
                 bpp = block.get('bytes_per_pixel', 2)
                 
                 f.seek(offset)
@@ -147,7 +151,9 @@ def read_bruker(file_path: str) -> BrukerAFMData:
                 raw_data = np.fromfile(f, dtype=dtype, count=x_res * y_res)
                 
                 if len(raw_data) == x_res * y_res:
-                    image_array = raw_data.reshape((y_res, x_res))
+                    # .squeeze() automatically turns a (1, 4096) array into a flat 1D (4096,) array,
+                    # while leaving 2D (512, 512) arrays perfectly intact!
+                    image_array = raw_data.reshape((y_res, x_res)).squeeze()
                     
                     base_name = block.get('channel_name', f"Channel_{offset}")
                     direction = block.get('direction', '')
