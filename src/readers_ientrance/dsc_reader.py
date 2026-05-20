@@ -1,0 +1,134 @@
+import pandas as pd
+import numpy as np
+import io
+from pydantic import BaseModel, Field, ConfigDict
+from typing import Dict, Any, Optional, List
+
+# Pydantic schema strictly defining the DSC output
+class DSCData(BaseModel):
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+    method_steps: List[str] = Field(default_factory=list)
+    data: Optional[pd.DataFrame] = None
+    
+    # Core Arrays mapped from the 8 columns
+    time: Optional[np.ndarray] = None
+    unsubtracted_heat_flow: Optional[np.ndarray] = None
+    baseline_heat_flow: Optional[np.ndarray] = None
+    program_temperature: Optional[np.ndarray] = None
+    sample_temperature: Optional[np.ndarray] = None
+    approx_gas_flow: Optional[np.ndarray] = None
+    calibration: Optional[np.ndarray] = None
+    heat_flow: Optional[np.ndarray] = None
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+def read_perkinelmer_dsc(filepath: str) -> DSCData:
+    """Reads a PerkinElmer DSC .txt file and returns a structured Pydantic model."""
+    metadata = {}
+    method_steps = []
+    data_lines = []
+    
+    state = "TOP_METADATA"
+    last_key = None
+
+    with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+        lines = f.readlines()
+
+    for i, line in enumerate(lines):
+        original_line = line
+        line = line.strip()
+
+        if not line:
+            # If we hit an empty line while reading data, the data block is over
+            if state == "DATA":
+                state = "BOTTOM_METADATA"
+            continue
+
+        # --- STATE: Top Metadata ---
+        if state == "TOP_METADATA":
+            if "Method Steps:" in line:
+                state = "METHOD_STEPS"
+                continue
+            
+            if ":" in line:
+                key, val = line.split(":", 1)
+                key, val = key.strip(), val.strip()
+                if key:
+                    if key in metadata:
+                        key = f"Calibration_{key}"
+                    metadata[key] = val
+                    last_key = key
+            elif last_key == "Comment":
+                # Handle multiline comments
+                metadata[last_key] += f"\n{line}"
+
+        # --- STATE: Method Steps ---
+        elif state == "METHOD_STEPS":
+            # The data block headers start with "Time" or "DSC 8500"
+            if "DSC 8500 Isothermal" in line or "DSC 8500 Temperature Scan" in line or "Time" in line:
+                state = "DATA_HEADERS"
+                continue
+            method_steps.append(line)
+
+        # --- STATE: Data Headers (Skip the messy text) ---
+        elif state == "DATA_HEADERS":
+            parts = line.split("\t")
+            # If a line starts with a number (like 0.000000), data has begun
+            if len(parts) > 3 and parts[0].replace('.', '', 1).isdigit():
+                state = "DATA"
+                data_lines.append(original_line.strip())
+
+        # --- STATE: Raw Data Rows ---
+        elif state == "DATA":
+            parts = line.split("\t")
+            if len(parts) > 3 and parts[0].replace('.', '', 1).replace('-', '', 1).isdigit():
+                data_lines.append(original_line.strip())
+            else:
+                # If we hit a non-numeric line, transition to footer
+                state = "BOTTOM_METADATA"
+                
+        # --- STATE: Bottom Metadata / Footer ---
+        if state == "BOTTOM_METADATA":
+            if ":" in line:
+                key, val = line.split(":", 1)
+                # Prefix with Footer_ to avoid overwriting top metadata
+                metadata[f"Footer_{key.strip()}"] = val.strip()
+            elif "\t" in line:
+                # Some profile values are separated by tabs instead of colons
+                parts = line.split("\t", 1)
+                if len(parts) == 2 and parts[0].strip():
+                    metadata[f"Footer_{parts[0].strip()}"] = parts[1].strip()
+
+    # --- Process Data into DataFrame and Arrays ---
+    columns = [
+        "time", 
+        "unsubtracted_heat_flow", 
+        "baseline_heat_flow", 
+        "program_temperature", 
+        "sample_temperature", 
+        "approx_gas_flow", 
+        "calibration", 
+        "heat_flow"
+    ]
+    
+    df = pd.DataFrame()
+    extracted_arrays = {col: None for col in columns}
+
+    if data_lines:
+        # Load the tab-separated rows
+        df = pd.read_csv(io.StringIO("\n".join(data_lines)), sep="\t", header=None)
+        
+        # Trim columns just in case the instrument exported extra tabs
+        num_cols = min(len(df.columns), len(columns))
+        df = df.iloc[:, :num_cols]
+        df.columns = columns[:num_cols]
+
+        for col in df.columns:
+            extracted_arrays[col] = pd.to_numeric(df[col], errors="coerce").to_numpy()
+
+    return DSCData(
+        metadata=metadata,
+        method_steps=method_steps,
+        data=df,
+        **extracted_arrays
+    )
