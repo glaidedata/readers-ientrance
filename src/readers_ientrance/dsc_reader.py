@@ -8,6 +8,7 @@ from typing import Dict, Any, Optional, List
 class DSCData(BaseModel):
     metadata: Dict[str, Any] = Field(default_factory=dict)
     method_steps: List[str] = Field(default_factory=list)
+    tables: Dict[str, List[List[str]]] = Field(default_factory=dict)
     data: Optional[pd.DataFrame] = None
 
     time: Optional[np.ndarray] = None
@@ -16,14 +17,15 @@ class DSCData(BaseModel):
     program_temperature: Optional[np.ndarray] = None
     sample_temperature: Optional[np.ndarray] = None
     approx_gas_flow: Optional[np.ndarray] = None
-    calibration: Optional[np.ndarray] = None
-    heat_flow: Optional[np.ndarray] = None
+    heat_flow_calibration: Optional[np.ndarray] = None
+    uncorrected_heat_flow: Optional[np.ndarray] = None
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
 def read_perkinelmer_dsc(filepath: str) -> DSCData:
     metadata = {}
     method_steps = []
+    tables = {}
     data_lines = []
 
     state = "TOP_METADATA"
@@ -104,6 +106,16 @@ def read_perkinelmer_dsc(filepath: str) -> DSCData:
                 current_section = re.sub(r'^(?:DSC|TGA|STA|Pyris)\s*\d*\s*', '', raw_section).strip()
                 continue
 
+            # Identify Table Rows (No Colons or Equals, but multiple parts separated by tabs/spaces)
+            if ":" not in line and "=" not in line:
+                parts = [p.strip() for p in re.split(r'\t|\s{2,}', original_line) if p.strip()]
+                if len(parts) > 1:
+                    if current_section not in tables:
+                        tables[current_section] = []
+                    tables[current_section].append(parts)
+                    continue
+
+            # Standard Key/Value mapping
             if ":" in line:
                 key, val = line.split(":", 1)
                 full_key = f"{current_section}_{key.strip()}" if current_section else f"Footer_{key.strip()}"
@@ -118,11 +130,6 @@ def read_perkinelmer_dsc(filepath: str) -> DSCData:
                 if len(parts) == 2 and parts[0].strip():
                     full_key = f"{current_section}_{parts[0].strip()}" if current_section else f"Footer_{parts[0].strip()}"
                     metadata[full_key] = parts[1].strip()
-            else:
-                parts = re.split(r'\s{2,}', line, maxsplit=1)
-                if len(parts) == 2 and parts[0].strip():
-                    full_key = f"{current_section}_{parts[0].strip()}" if current_section else f"Footer_{parts[0].strip()}"
-                    metadata[full_key] = parts[1].strip()
 
     # --- Process Data into DataFrame and Arrays ---
     columns = [
@@ -132,8 +139,8 @@ def read_perkinelmer_dsc(filepath: str) -> DSCData:
         "program_temperature",
         "sample_temperature",
         "approx_gas_flow",
-        "calibration",
-        "heat_flow"
+        "heat_flow_calibration",
+        "uncorrected_heat_flow"
     ]
 
     df = pd.DataFrame()
@@ -157,6 +164,7 @@ def read_perkinelmer_dsc(filepath: str) -> DSCData:
     return DSCData(
         metadata=metadata,
         method_steps=method_steps,
+        tables=tables,
         data=df,
         **extracted_arrays
     )
