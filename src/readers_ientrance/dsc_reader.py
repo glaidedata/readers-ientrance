@@ -10,7 +10,7 @@ class DSCData(BaseModel):
     metadata: Dict[str, Any] = Field(default_factory=dict)
     method_steps: List[str] = Field(default_factory=list)
     data: Optional[pd.DataFrame] = None
-    
+
     # Core Arrays mapped from the columns
     time: Optional[np.ndarray] = None
     unsubtracted_heat_flow: Optional[np.ndarray] = None
@@ -28,10 +28,10 @@ def read_perkinelmer_dsc(filepath: str) -> DSCData:
     metadata = {}
     method_steps = []
     data_lines = []
-    
+
     state = "TOP_METADATA"
     last_key = None
-    current_section = ""  # <--- NEW: Tracks dynamic sub-sections
+    current_section = ""
 
     with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
         lines = f.readlines()
@@ -50,7 +50,7 @@ def read_perkinelmer_dsc(filepath: str) -> DSCData:
             if "Method Steps:" in line:
                 state = "METHOD_STEPS"
                 continue
-            
+
             if ":" in line:
                 key, val = line.split(":", 1)
                 key, val = key.strip(), val.strip()
@@ -70,60 +70,90 @@ def read_perkinelmer_dsc(filepath: str) -> DSCData:
                 continue
             method_steps.append(line)
 
-        # --- STATE: Data Headers (Skip the messy text) ---
+        # --- STATE: Data Headers ---
         elif state == "DATA_HEADERS":
-            # Strip out empty tabs to safely check the first column
-            clean_parts = [p.strip() for p in original_line.split("\t") if p.strip()]
-            
-            # If the first clean column is a number, the actual data has begun
-            if len(clean_parts) > 3 and clean_parts[0].replace('.', '', 1).replace('-', '', 1).isdigit():
-                state = "DATA"
-                data_lines.append(original_line.strip())
+            clean_parts = original_line.split()
+            if len(clean_parts) > 3:
+                try:
+                    float(clean_parts[0].replace(',', '.'))
+                    state = "DATA"
+                except ValueError:
+                    pass
+            if state != "DATA":
+                continue
 
         # --- STATE: Raw Data Rows ---
-        elif state == "DATA":
-            clean_parts = [p.strip() for p in original_line.split("\t") if p.strip()]
-            
-            if len(clean_parts) > 3 and clean_parts[0].replace('.', '', 1).replace('-', '', 1).isdigit():
+        if state == "DATA":
+            clean_parts = original_line.split()
+            is_numeric = False
+            if len(clean_parts) > 3:
+                try:
+                    float(clean_parts[0].replace(',', '.'))
+                    is_numeric = True
+                except ValueError:
+                    pass
+
+            if is_numeric:
                 data_lines.append(original_line.strip())
-            else:
-                # Non-numeric line -> transition to footer
-                state = "BOTTOM_METADATA"
-                
-        # --- STATE: Bottom Metadata / Footer ---
-        elif state == "BOTTOM_METADATA":
-            if line.endswith(":") and (line.isupper() or "CALIBRATION" in line.upper() or "PROFILE" in line.upper()):
-                current_section = line[:-1].strip()
                 continue
-                
+            else:
+                # Non-numeric line -> transition to footer and fall through!
+                state = "BOTTOM_METADATA"
+
+        # --- STATE: Bottom Metadata / Footer ---
+        if state == "BOTTOM_METADATA":
+            if line.endswith(":") and (line.isupper() or "CALIBRATION" in line.upper() or "PROFILE" in line.upper()):
+                raw_section = line[:-1].strip()
+                # Dynamically strip specific instrument names (e.g. "DSC8500 ") so schemas don't break
+                current_section = re.sub(r'^DSC\d+\s*', '', raw_section)
+                continue
+
             if ":" in line:
                 key, val = line.split(":", 1)
                 full_key = f"{current_section}_{key.strip()}" if current_section else f"Footer_{key.strip()}"
                 metadata[full_key] = val.strip()
+            elif "=" in line:
+                parts = line.split("=", 1)
+                if len(parts) == 2:
+                    full_key = f"{current_section}_{parts[0].strip()}" if current_section else f"Footer_{parts[0].strip()}"
+                    metadata[full_key] = parts[1].strip()
             elif "\t" in line:
                 parts = line.split("\t", 1)
+                if len(parts) == 2 and parts[0].strip():
+                    full_key = f"{current_section}_{parts[0].strip()}" if current_section else f"Footer_{parts[0].strip()}"
+                    metadata[full_key] = parts[1].strip()
+            else:
+                # Fallback for double-spaced keys
+                parts = re.split(r'\s{2,}', line, maxsplit=1)
                 if len(parts) == 2 and parts[0].strip():
                     full_key = f"{current_section}_{parts[0].strip()}" if current_section else f"Footer_{parts[0].strip()}"
                     metadata[full_key] = parts[1].strip()
 
     # --- Process Data into DataFrame and Arrays ---
     columns = [
-        "time", 
-        "unsubtracted_heat_flow", 
-        "baseline_heat_flow", 
-        "program_temperature", 
-        "sample_temperature", 
-        "approx_gas_flow", 
-        "calibration", 
+        "time",
+        "unsubtracted_heat_flow",
+        "baseline_heat_flow",
+        "program_temperature",
+        "sample_temperature",
+        "approx_gas_flow",
+        "calibration",
         "heat_flow"
     ]
-    
+
     df = pd.DataFrame()
     extracted_arrays = {col: None for col in columns}
 
     if data_lines:
-        df = pd.read_csv(io.StringIO("\n".join(data_lines)), sep="\t", header=None)
-        
+        try:
+            # Try strict tab separation first
+            df = pd.read_csv(io.StringIO("\n".join(data_lines)), sep="\t", header=None)
+            if len(df.columns) < 4:
+                # Fallback to whitespace separation if tabs fail
+                df = pd.read_csv(io.StringIO("\n".join(data_lines)), sep=r"\s+", header=None)
+        except Exception:
+            df = pd.read_csv(io.StringIO("\n".join(data_lines)), sep=r"\s+", header=None)
+
         num_cols = min(len(df.columns), len(columns))
         df = df.iloc[:, :num_cols]
         df.columns = columns[:num_cols]
