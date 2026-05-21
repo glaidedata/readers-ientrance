@@ -5,13 +5,11 @@ import re
 from pydantic import BaseModel, Field, ConfigDict
 from typing import Dict, Any, Optional, List
 
-# Pydantic schema strictly defining the DSC output
 class DSCData(BaseModel):
     metadata: Dict[str, Any] = Field(default_factory=dict)
     method_steps: List[str] = Field(default_factory=list)
     data: Optional[pd.DataFrame] = None
 
-    # Core Arrays mapped from the columns
     time: Optional[np.ndarray] = None
     unsubtracted_heat_flow: Optional[np.ndarray] = None
     baseline_heat_flow: Optional[np.ndarray] = None
@@ -24,7 +22,6 @@ class DSCData(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
 def read_perkinelmer_dsc(filepath: str) -> DSCData:
-    """Reads a PerkinElmer DSC .txt file and returns a structured Pydantic model."""
     metadata = {}
     method_steps = []
     data_lines = []
@@ -65,7 +62,7 @@ def read_perkinelmer_dsc(filepath: str) -> DSCData:
 
         # --- STATE: Method Steps ---
         elif state == "METHOD_STEPS":
-            if line == "Time" or line.startswith("Time\t"):
+            if line.startswith("Time") or "Time\t" in original_line:
                 state = "DATA_HEADERS"
                 continue
             method_steps.append(line)
@@ -94,18 +91,17 @@ def read_perkinelmer_dsc(filepath: str) -> DSCData:
                     pass
 
             if is_numeric:
-                data_lines.append(original_line.strip())
+                safe_line = original_line.replace(',', '.').strip()
+                data_lines.append(safe_line)
                 continue
             else:
-                # Non-numeric line -> transition to footer and fall through!
                 state = "BOTTOM_METADATA"
 
         # --- STATE: Bottom Metadata / Footer ---
         if state == "BOTTOM_METADATA":
             if line.endswith(":") and (line.isupper() or "CALIBRATION" in line.upper() or "PROFILE" in line.upper()):
                 raw_section = line[:-1].strip()
-                # Dynamically strip specific instrument names (e.g. "DSC8500 ") so schemas don't break
-                current_section = re.sub(r'^DSC\d+\s*', '', raw_section)
+                current_section = re.sub(r'^(?:DSC|TGA|STA|Pyris)\s*\d*\s*', '', raw_section).strip()
                 continue
 
             if ":" in line:
@@ -123,7 +119,6 @@ def read_perkinelmer_dsc(filepath: str) -> DSCData:
                     full_key = f"{current_section}_{parts[0].strip()}" if current_section else f"Footer_{parts[0].strip()}"
                     metadata[full_key] = parts[1].strip()
             else:
-                # Fallback for double-spaced keys
                 parts = re.split(r'\s{2,}', line, maxsplit=1)
                 if len(parts) == 2 and parts[0].strip():
                     full_key = f"{current_section}_{parts[0].strip()}" if current_section else f"Footer_{parts[0].strip()}"
@@ -146,10 +141,8 @@ def read_perkinelmer_dsc(filepath: str) -> DSCData:
 
     if data_lines:
         try:
-            # Try strict tab separation first
             df = pd.read_csv(io.StringIO("\n".join(data_lines)), sep="\t", header=None)
             if len(df.columns) < 4:
-                # Fallback to whitespace separation if tabs fail
                 df = pd.read_csv(io.StringIO("\n".join(data_lines)), sep=r"\s+", header=None)
         except Exception:
             df = pd.read_csv(io.StringIO("\n".join(data_lines)), sep=r"\s+", header=None)
