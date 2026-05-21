@@ -55,16 +55,13 @@ def read_perkinelmer_dsc(filepath: str) -> DSCData:
                 key, val = line.split(":", 1)
                 key, val = key.strip(), val.strip()
                 if key:
-                    if key in metadata:
-                        prefix = current_section if current_section else "Duplicate"
-                        key = f"{prefix}_{key}"
-                        
-                    metadata[key] = val
-                    last_key = key
+                    full_key = f"{current_section}_{key}" if current_section else key
+                    metadata[full_key] = val
+                    last_key = full_key
             elif last_key == "Comment":
                 metadata[last_key] += f"\n{line}"
             elif not "\t" in line and len(line) < 40:
-                current_section = line
+                current_section = line.strip()
 
         # --- STATE: Method Steps ---
         elif state == "METHOD_STEPS":
@@ -94,14 +91,20 @@ def read_perkinelmer_dsc(filepath: str) -> DSCData:
                 state = "BOTTOM_METADATA"
                 
         # --- STATE: Bottom Metadata / Footer ---
-        if state == "BOTTOM_METADATA":
+        elif state == "BOTTOM_METADATA":
+            if line.endswith(":") and (line.isupper() or "CALIBRATION" in line.upper() or "PROFILE" in line.upper()):
+                current_section = line[:-1].strip()
+                continue
+                
             if ":" in line:
                 key, val = line.split(":", 1)
-                metadata[f"Footer_{key.strip()}"] = val.strip()
+                full_key = f"{current_section}_{key.strip()}" if current_section else f"Footer_{key.strip()}"
+                metadata[full_key] = val.strip()
             elif "\t" in line:
                 parts = line.split("\t", 1)
                 if len(parts) == 2 and parts[0].strip():
-                    metadata[f"Footer_{parts[0].strip()}"] = parts[1].strip()
+                    full_key = f"{current_section}_{parts[0].strip()}" if current_section else f"Footer_{parts[0].strip()}"
+                    metadata[full_key] = parts[1].strip()
 
     # --- Process Data into DataFrame and Arrays ---
     columns = [
