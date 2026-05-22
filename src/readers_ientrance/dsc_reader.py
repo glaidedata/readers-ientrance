@@ -101,13 +101,18 @@ def read_perkinelmer_dsc(filepath: str) -> DSCData:
 
         # --- STATE: Bottom Metadata / Footer ---
         if state == "BOTTOM_METADATA":
-            if line.endswith(":") and (line.isupper() or "CALIBRATION" in line.upper() or "PROFILE" in line.upper()):
+            if line.endswith(":") and line.isupper():
                 raw_section = line[:-1].strip()
                 current_section = re.sub(r'^(?:DSC|TGA|STA|Pyris)\s*\d*\s*', '', raw_section).strip()
                 continue
 
-            # Identify Table Rows (No Colons or Equals, but multiple parts separated by tabs/spaces)
-            if ":" not in line and "=" not in line:
+            KNOWN_TABLES = [
+                "SAMPLE TEMPERATURE CALIBRATION VALUES",
+                "FURNACE CALIBRATION COMPUTED RESULTS",
+                "HEAT FLOW CALIBRATION VALUES"
+            ]
+
+            if current_section in KNOWN_TABLES and ":" not in line and "=" not in line:
                 parts = [p.strip() for p in re.split(r'\t|\s{2,}', original_line) if p.strip()]
                 if len(parts) > 1:
                     if current_section not in tables:
@@ -127,6 +132,11 @@ def read_perkinelmer_dsc(filepath: str) -> DSCData:
                     metadata[full_key] = parts[1].strip()
             elif "\t" in line:
                 parts = line.split("\t", 1)
+                if len(parts) == 2 and parts[0].strip():
+                    full_key = f"{current_section}_{parts[0].strip()}" if current_section else f"Footer_{parts[0].strip()}"
+                    metadata[full_key] = parts[1].strip()
+            else:
+                parts = re.split(r'\s{2,}', line, maxsplit=1)
                 if len(parts) == 2 and parts[0].strip():
                     full_key = f"{current_section}_{parts[0].strip()}" if current_section else f"Footer_{parts[0].strip()}"
                     metadata[full_key] = parts[1].strip()
