@@ -120,19 +120,18 @@ def read_perkinelmer_dsc(filepath: str) -> DSCData:
                     tables[current_section].append(parts)
                     continue
 
-            # Standard Key/Value mapping
-            if ":" in line:
+            if "\t" in line:
+                parts = line.split("\t", 1)
+                if len(parts) == 2 and parts[0].strip():
+                    full_key = f"{current_section}_{parts[0].strip()}" if current_section else f"Footer_{parts[0].strip()}"
+                    metadata[full_key] = parts[1].strip()
+            elif ":" in line:
                 key, val = line.split(":", 1)
                 full_key = f"{current_section}_{key.strip()}" if current_section else f"Footer_{key.strip()}"
                 metadata[full_key] = val.strip()
             elif "=" in line:
                 parts = line.split("=", 1)
                 if len(parts) == 2:
-                    full_key = f"{current_section}_{parts[0].strip()}" if current_section else f"Footer_{parts[0].strip()}"
-                    metadata[full_key] = parts[1].strip()
-            elif "\t" in line:
-                parts = line.split("\t", 1)
-                if len(parts) == 2 and parts[0].strip():
                     full_key = f"{current_section}_{parts[0].strip()}" if current_section else f"Footer_{parts[0].strip()}"
                     metadata[full_key] = parts[1].strip()
             else:
