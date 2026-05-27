@@ -1,7 +1,6 @@
 import pandas as pd
 import numpy as np
 import io
-import re
 from pydantic import BaseModel, Field, ConfigDict
 from typing import Dict, Any, Optional, List
 
@@ -10,7 +9,7 @@ class TADSCData(BaseModel):
     method_steps: List[str] = Field(default_factory=list)
     data: Optional[pd.DataFrame] = None
 
-    # Generic DSC arrays that will map directly to DSCMeasurementBase
+    # Generic DSC arrays
     time: Optional[np.ndarray] = None
     sample_temperature: Optional[np.ndarray] = None
     heat_flow: Optional[np.ndarray] = None
@@ -20,56 +19,61 @@ class TADSCData(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
 def read_ta_dsc(filepath: str) -> TADSCData:
-    """Reads a TA Instruments DSC .txt export file."""
+    """Reads a TA Instruments DSC .txt export file, automatically handling UTF-16/UTF-8 encoding."""
     metadata = {}
     method_steps = []
     data_lines = []
     signals = {}
-
     in_data_section = False
 
-    # TA exports can sometimes use different encodings, utf-8 with fallback is safe
-    with open(filepath, "r", encoding="utf-8", errors="replace") as f:
-        for line in f:
-            original_line = line
-            line = line.strip()
+    # 1. Read as raw binary bytes first to prevent encoding crashes
+    with open(filepath, "rb") as f:
+        raw_bytes = f.read()
 
-            if not line:
-                continue
+    # 2. Detect and decode UTF-16 encoding commonly used by TA Instruments on Windows
+    text = raw_bytes.decode("utf-8", errors="ignore")
+    if "\x00" in text:
+        text = raw_bytes.decode("utf-16", errors="ignore")
 
-            # Data block delimiter
-            if line == "StartOfData":
-                in_data_section = True
-                continue
+    # 3. Process the decoded text line by line
+    for line in text.splitlines():
+        original_line = line
+        line = line.strip()
 
-            if in_data_section:
-                # Replace commas with dots for European decimal formats
-                data_lines.append(line.replace(',', '.'))
-                continue
+        if not line:
+            continue
 
-            # --- Parse Metadata Block ---
-            # TA usually separates keys and values by a tab, but sometimes spaces
-            parts = original_line.split('\t', 1)
-            if len(parts) < 2:
-                parts = original_line.split(' ', 1)
+        # Data block delimiter
+        if line == "StartOfData":
+            in_data_section = True
+            continue
 
-            if len(parts) == 2:
-                key = parts[0].strip()
-                val = parts[1].strip()
+        if in_data_section:
+            # Replace commas with dots for safety across regional locales
+            data_lines.append(line.replace(',', '.'))
+            continue
 
-                if key.startswith('OrgMethod'):
-                    method_steps.append(val)
-                elif key.startswith('Sig'):
-                    signals[key] = val
-                elif key in metadata:
-                    # Handle duplicate keys (like Xcomment or InstCalFile) by appending them
-                    metadata[key] = metadata[key] + " | " + val
-                else:
-                    metadata[key] = val
+        # Parse Metadata Block
+        parts = original_line.split('\t', 1)
+        if len(parts) < 2:
+            parts = original_line.split(' ', 1)
+
+        if len(parts) == 2:
+            key = parts[0].strip()
+            val = parts[1].strip()
+
+            if key.startswith('OrgMethod'):
+                method_steps.append(val)
+            elif key.startswith('Sig'):
+                signals[key] = val
+            elif key in metadata:
+                metadata[key] = metadata[key] + " | " + val
             else:
-                metadata[line] = ""
+                metadata[key] = val
+        else:
+            metadata[line] = ""
 
-    # --- Process Data ---
+    # 4. Convert numeric blocks into structured data arrays
     df = pd.DataFrame()
     time_arr = temp_arr = hf_arr = hc_arr = gas_arr = None
 
@@ -79,14 +83,15 @@ def read_ta_dsc(filepath: str) -> TADSCData:
         except Exception:
             pass
 
-        # Apply the Sig headers dynamically to the DataFrame columns
+        # Apply the Sig headers dynamically based on metadata keys
         col_names = []
         for i in range(1, len(df.columns) + 1):
             sig_key = f"Sig{i}"
             col_names.append(signals.get(sig_key, f"Column_{i}"))
-        df.columns = col_names
+        if len(col_names) == len(df.columns):
+            df.columns = col_names
 
-        # Map DataFrame columns to standard standard arrays
+        # Map named columns to numeric arrays
         for col in df.columns:
             col_lower = col.lower()
             if "time" in col_lower:
