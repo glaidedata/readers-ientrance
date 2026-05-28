@@ -5,6 +5,7 @@ from .bruker_reader import read_bruker, BrukerAFMData
 from .thermal_reader import read_thermal_dat, ThermalData
 from .dsc_reader import read_perkinelmer_dsc, DSCData
 from .ta_dsc_reader import read_ta_dsc, TADSCData
+from .arc_reader import read_arc, ARCData
 
 __all__ = [
     "read_lakeshore_vsm",
@@ -21,4 +22,6 @@ __all__ = [
     "DSCData",
     "read_ta_dsc",
     "TADSCData",
+    "read_arc",
+    "ARCData",
 ]
