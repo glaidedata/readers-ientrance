@@ -73,6 +73,7 @@ def read_arc(filepath: str) -> ARCData:
         try:
             # Parse the table cleanly using the semicolon separator
             df = pd.read_csv(io.StringIO("\n".join(data_lines)), sep=';')
+            df.columns = df.columns.str.strip()
 
             if "Serial Number" in df.columns: arrays["serial_number"] = pd.to_numeric(df["Serial Number"], errors="coerce").to_numpy()
             if "Current Time" in df.columns: arrays["current_time"] = df["Current Time"].astype(str).to_numpy()
