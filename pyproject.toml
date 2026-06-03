@@ -11,7 +11,8 @@ requires-python = ">=3.10"
 dependencies = [
     "pandas>=2.0.0",
     "pydantic>=2.0.0",
-    "kaitaistruct>=0.11"
+    "kaitaistruct>=0.11",
+    "renishawWiRE"
 ]
 
 [project.optional-dependencies]
