@@ -7,6 +7,7 @@ from .dsc_reader import read_perkinelmer_dsc, DSCData
 from .ta_dsc_reader import read_ta_dsc, TADSCData
 from .arc_reader import read_arc, ARCData
 from .wdf_reader import read_renishaw_wdf, RenishawRamanData
+from .spc_reader import read_spc, SPCData
 
 __all__ = [
     "read_lakeshore_vsm",
@@ -26,5 +27,7 @@ __all__ = [
     "read_arc",
     "ARCData",
     "read_renishaw_wdf",
-    "RenishawRamanData"
+    "RenishawRamanData",
+    "read_spc",
+    "SPCData"
 ]
