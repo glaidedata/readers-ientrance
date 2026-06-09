@@ -10,9 +10,11 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "pandas>=2.0.0",
+    "numpy",
     "pydantic>=2.0.0",
     "kaitaistruct>=0.11",
-    "renishawWiRE"
+    "renishawWiRE",
+    "spc_spectra"
 ]
 
 [project.optional-dependencies]
