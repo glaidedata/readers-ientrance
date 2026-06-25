@@ -8,6 +8,7 @@ from .ta_dsc_reader import read_ta_dsc, TADSCData
 from .arc_reader import read_arc, ARCData
 from .wdf_reader import read_renishaw_wdf, RenishawRamanData
 from .ald_reader import read_italya_ald, ALDData
+from .zmes_reader import read_zmes, ZmesDLSData, ZmesRecord
 
 __all__ = [
     "read_lakeshore_vsm",
@@ -29,5 +30,8 @@ __all__ = [
     "read_renishaw_wdf",
     "RenishawRamanData",
     "read_italya_ald",
-    "ALDData"
+    "ALDData",
+    "read_zmes",
+    "ZmesDLSData",
+    "ZmesRecord"
 ]
