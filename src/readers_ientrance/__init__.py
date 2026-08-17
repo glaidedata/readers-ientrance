@@ -11,6 +11,7 @@ from .ald_reader import read_italya_ald, ALDData
 from .zmes_reader import read_zmes, ZmesDLSData, ZmesRecord
 from .rcp_reader import read_rcp, RcpData, RecipePoint, AcquisitionSettings, ReconSettings
 from .txrm_reader import read_txrm, TxrmData
+from .txm_reader import read_txm, TxmData
 
 __all__ = [
     "read_lakeshore_vsm",
@@ -42,5 +43,7 @@ __all__ = [
     "AcquisitionSettings",
     "ReconSettings",
     "read_txrm",
-    "TxrmData"
+    "TxrmData",
+    "read_txm",
+    "TxmData"
 ]
