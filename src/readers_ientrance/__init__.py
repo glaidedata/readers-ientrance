@@ -9,6 +9,9 @@ from .arc_reader import read_arc, ARCData
 from .wdf_reader import read_renishaw_wdf, RenishawRamanData
 from .ald_reader import read_italya_ald, ALDData
 from .zmes_reader import read_zmes, ZmesDLSData, ZmesRecord
+from .rcp_reader import read_rcp, RcpData, RecipePoint, AcquisitionSettings, ReconSettings
+from .txrm_reader import read_txrm, TxrmData
+from .txm_reader import read_txm, TxmData
 
 __all__ = [
     "read_lakeshore_vsm",
@@ -33,5 +36,14 @@ __all__ = [
     "ALDData",
     "read_zmes",
     "ZmesDLSData",
-    "ZmesRecord"
+    "ZmesRecord",
+    "read_rcp",
+    "RcpData",
+    "RecipePoint",
+    "AcquisitionSettings",
+    "ReconSettings",
+    "read_txrm",
+    "TxrmData",
+    "read_txm",
+    "TxmData"
 ]
