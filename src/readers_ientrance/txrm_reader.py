@@ -17,24 +17,24 @@ from .rcp_reader import _decode_ole_stream, _extract_all_streams
 class TxrmData(BaseModel):
     """Main model for the ZEISS .txrm raw acquisition file."""
     metadata: Dict[str, Any] = Field(default_factory=dict)
-    
+
     # Core Metadata Directories
     image_info: Dict[str, Any] = Field(default_factory=dict)
     acquisition_settings: Dict[str, Any] = Field(default_factory=dict)
     recon_settings: Dict[str, Any] = Field(default_factory=dict)
     hw_stability: Dict[str, Any] = Field(default_factory=dict)
     temperature_info: Dict[str, Any] = Field(default_factory=dict)
-    
+
     # Image catalog (Counts and paths, not raw bytes)
     image_data_summary: Dict[str, int] = Field(default_factory=dict)
-    
+
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
 # --- HELPER FUNCTIONS ---
 
 def extract_preview_image(file_path: str, target_stream: str = 'ImageData1/Image1', width: int = 1010, height: int = 1010) -> Optional[np.ndarray]:
     """
-    Extracts a single 2D projection image from a ZEISS .txrm file.
+    Extracts a single 2D projection image from a ZEISS .txrm or .txm file.
     By default, grabs the very first image for preview purposes.
     Returns a 2D numpy array of the image, or None if extraction fails.
     """
@@ -47,26 +47,28 @@ def extract_preview_image(file_path: str, target_stream: str = 'ImageData1/Image
 
     try:
         with olefile.OleFileIO(file_path) as ole:
-            # Check if the specific image stream exists
             stream_path = target_stream.split('/')
             if not ole.exists(stream_path):
                 print(f"Stream {target_stream} not found.")
                 return None
 
             with ole.openstream(stream_path) as stream:
-                # Read the entire raw byte stream
                 raw_bytes = stream.read()
-                
-            # Convert raw bytes to a 1D uint16 numpy array
-            # Assuming DataType 5 (uint16) which is standard for TXRM projections
+
             image_1d = np.frombuffer(raw_bytes, dtype=np.uint16)
-            
-            # Reshape into the 2D grid based on the provided width and height
-            try:
-                image_2d = image_1d.reshape((height, width))
-                return image_2d
-            except ValueError as ve:
-                print(f"Reshape Error: The stream size ({len(image_1d)} pixels) doesn't match {width}x{height}.")
+            num_pixels = len(image_1d)
+
+            # --- SMART RESHAPE LOGIC ---
+            if num_pixels == width * height:
+                return image_1d.reshape((height, width))
+            elif num_pixels % width == 0:
+                actual_height = num_pixels // width
+                return image_1d.reshape((actual_height, width))
+            elif num_pixels % height == 0:
+                actual_width = num_pixels // height
+                return image_1d.reshape((height, actual_width))
+            else:
+                print(f"Reshape Error: The stream size ({num_pixels} pixels) cannot be cleanly reshaped with {width} or {height}.")
                 return None
 
     except Exception as e:
@@ -86,7 +88,7 @@ def read_txrm(file_path: str) -> TxrmData:
         "File Format": "ZEISS TXRM (OLE2)",
         "Parser": "olefile (Metadata Only)"
     }
-    
+
     if not os.path.exists(file_path):
         metadata["extraction_error"] = f"File not found: {file_path}"
         return TxrmData(metadata=metadata)
@@ -119,12 +121,12 @@ def read_txrm(file_path: str) -> TxrmData:
             # Find all root folders that start with "ImageData"
             all_entries = ole.listdir()
             image_folders = set(entry[0] for entry in all_entries if entry[0].startswith("ImageData"))
-            
+
             for folder in image_folders:
                 # Count how many projections/streams are in this specific ImageData folder
                 item_count = sum(1 for entry in all_entries if entry[0] == folder)
                 txrm_model.image_data_summary[folder] = item_count
-                
+
             txrm_model.metadata["Total_ImageData_Folders"] = len(image_folders)
             txrm_model.metadata["Total_Projections"] = sum(txrm_model.image_data_summary.values())
 
