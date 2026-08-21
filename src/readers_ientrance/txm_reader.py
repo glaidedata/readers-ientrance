@@ -21,10 +21,12 @@ class TxmData(BaseModel):
     image_info: Dict[str, Any] = Field(default_factory=dict)
     acquisition_settings: Dict[str, Any] = Field(default_factory=dict)
     recon_settings: Dict[str, Any] = Field(default_factory=dict)
+
+    # TXM specific dimension parameters
+    recon_input_tomo_params: Dict[str, Any] = Field(default_factory=dict)
     
     # Image catalog (Counts and paths, not raw 3D voxel arrays)
     image_data_summary: Dict[str, int] = Field(default_factory=dict)
-    
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
@@ -52,7 +54,7 @@ def read_txm(file_path: str) -> TxmData:
 
     try:
         with olefile.OleFileIO(file_path) as ole:
-            # 1. Extract Global Root Metadata (streams at the root level)
+            # Extract Global Root Metadata (streams at the root level)
             root_streams = [entry[0] for entry in ole.listdir() if len(entry) == 1]
             for stream_name in root_streams:
                 try:
@@ -61,13 +63,16 @@ def read_txm(file_path: str) -> TxmData:
                 except Exception as e:
                     txm_model.metadata[stream_name] = f"Error: {e}"
 
-            # 2. Extract High-Value Metadata Directories
+            # Extract High-Value Metadata Directories
             # TXM files usually contain extensive ReconSettings from the FDK algorithm
             txm_model.image_info = _extract_all_streams(ole, ["ImageInfo"])
             txm_model.acquisition_settings = _extract_all_streams(ole, ["AcquisitionSettings"])
             txm_model.recon_settings = _extract_all_streams(ole, ["ReconSettings"])
 
-            # 3. Catalog the 3D Image Data (Skip reading the binary arrays)
+            # Extract the parameters containing the cropped dimensions
+            txm_model.recon_input_tomo_params = _extract_all_streams(ole, ["ReconInputTomoParams"])
+
+            # Catalog the 3D Image Data (Skip reading the binary arrays)
             # Find all root folders that start with "ImageData" to catalog slices/blocks
             all_entries = ole.listdir()
             image_folders = set(entry[0] for entry in all_entries if entry[0].startswith("ImageData"))
