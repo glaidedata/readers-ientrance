@@ -1,5 +1,7 @@
 import os
-from typing import Dict, Any
+import re
+from typing import Dict, Any, Optional
+import numpy as np
 from pydantic import BaseModel, Field, ConfigDict
 
 try:
@@ -27,13 +29,123 @@ class TxmData(BaseModel):
     
     # Image catalog (Counts and paths, not raw 3D voxel arrays)
     image_data_summary: Dict[str, int] = Field(default_factory=dict)
+
+    # Optional representative slice extracted without loading the full volume
+    preview_image: Optional[np.ndarray] = Field(default=None, exclude=True)
+    preview_slice_index: Optional[int] = None
+    preview_stream_path: Optional[list[str]] = None
+    preview_plane_index: Optional[int] = None
+    preview_error: Optional[str] = None
+
     model_config = ConfigDict(arbitrary_types_allowed=True)
+
+
+# --- PREVIEW HELPERS ---
+
+def _natural_name_key(name: str):
+    """Return a case-insensitive, numeric-aware key for an OLE entry name."""
+    return tuple(
+        (0, int(part)) if part.isdigit() else (1, part.casefold())
+        for part in re.split(r'(\d+)', name)
+        if part
+    )
+
+
+def _stream_path_key(path: list[str]):
+    """Order a complete OLE stream path without assuming a fixed naming scheme."""
+    return tuple(_natural_name_key(part) for part in path)
+
+
+def _image_stream_paths(all_entries: list[list[str]]) -> list[list[str]]:
+    """Discover reconstructed image streams and preserve their complete paths."""
+    return sorted(
+        [
+            entry
+            for entry in all_entries
+            if len(entry) > 1 and entry[0].casefold().startswith('imagedata')
+        ],
+        key=_stream_path_key,
+    )
+
+
+def _positive_int(metadata: Dict[str, Any], key: str) -> Optional[int]:
+    """Extract a positive integer from dual-decoded reader metadata."""
+    value = metadata.get(key)
+    if isinstance(value, dict):
+        value = value.get('int32')
+    if isinstance(value, (int, np.integer)) and value > 0:
+        return int(value)
+    return None
+
+
+def _extract_middle_slice(
+    ole: 'olefile.OleFileIO',
+    txm_model: TxmData,
+    image_stream_paths: list[list[str]],
+) -> None:
+    """Decode the middle reconstructed plane from discovered TXM image streams."""
+    width = _positive_int(txm_model.image_info, 'ImageWidth')
+    height = _positive_int(txm_model.image_info, 'ImageHeight')
+    if width is None or height is None:
+        txm_model.preview_error = 'Missing valid ImageWidth or ImageHeight metadata.'
+        return
+
+    bytes_per_plane = width * height * np.dtype(np.uint16).itemsize
+    stream_planes = []
+    for path in image_stream_paths:
+        try:
+            stream_size = ole.get_size(path)
+        except Exception:
+            continue
+        if stream_size <= 0 or stream_size % bytes_per_plane != 0:
+            continue
+        stream_planes.append((path, stream_size // bytes_per_plane))
+
+    total_planes = sum(plane_count for _, plane_count in stream_planes)
+    if total_planes == 0:
+        txm_model.preview_error = (
+            'No ImageData stream contains complete uint16 image planes.'
+        )
+        return
+
+    middle_index = total_planes // 2
+    preceding_planes = 0
+    selected_path = None
+    selected_plane_index = None
+    selected_plane_count = None
+    for path, plane_count in stream_planes:
+        if middle_index < preceding_planes + plane_count:
+            selected_path = path
+            selected_plane_index = middle_index - preceding_planes
+            selected_plane_count = plane_count
+            break
+        preceding_planes += plane_count
+
+    if (
+        selected_path is None
+        or selected_plane_index is None
+        or selected_plane_count is None
+    ):
+        txm_model.preview_error = 'Could not select the middle reconstructed plane.'
+        return
+
+    try:
+        with ole.openstream(selected_path) as stream:
+            raw_bytes = stream.read()
+        image_data = np.frombuffer(raw_bytes, dtype=np.uint16)
+        image_stack = image_data.reshape((selected_plane_count, height, width))
+        txm_model.preview_image = image_stack[selected_plane_index].copy()
+        txm_model.preview_slice_index = middle_index
+        txm_model.preview_stream_path = list(selected_path)
+        txm_model.preview_plane_index = selected_plane_index
+    except Exception as e:
+        txm_model.preview_error = f'Could not decode middle TXM slice: {e}'
 
 
 # --- MAIN READER ---
 
-def read_txm(file_path: str) -> TxmData:
-    """Reads metadata from a ZEISS .txm file without loading heavy 3D voxel arrays."""
+def read_txm(file_path: str, *, include_preview: bool = False) -> TxmData:
+    """Read TXM metadata and optionally decode one representative middle slice."""
     if olefile is None:
         raise ImportError("The 'olefile' package is required. Install it using 'pip install olefile'")
 
@@ -75,6 +187,7 @@ def read_txm(file_path: str) -> TxmData:
             # Catalog the 3D Image Data (Skip reading the binary arrays)
             # Find all root folders that start with "ImageData" to catalog slices/blocks
             all_entries = ole.listdir()
+            image_stream_paths = _image_stream_paths(all_entries)
             image_folders = set(entry[0] for entry in all_entries if entry[0].startswith("ImageData"))
             
             for folder in image_folders:
@@ -84,6 +197,9 @@ def read_txm(file_path: str) -> TxmData:
                 
             txm_model.metadata["Total_ImageData_Folders"] = len(image_folders)
             txm_model.metadata["Total_3D_Slices_or_Blocks"] = sum(txm_model.image_data_summary.values())
+
+            if include_preview:
+                _extract_middle_slice(ole, txm_model, image_stream_paths)
 
     except Exception as e:
         txm_model.metadata["extraction_error"] = str(e)
