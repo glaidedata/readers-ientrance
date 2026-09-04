@@ -29,6 +29,7 @@ class TxmData(BaseModel):
     
     # Image catalog (Counts and paths, not raw 3D voxel arrays)
     image_data_summary: Dict[str, int] = Field(default_factory=dict)
+    total_planes: Optional[int] = None
 
     # Optional representative slice extracted without loading the full volume
     preview_image: Optional[np.ndarray] = Field(default=None, exclude=True)
@@ -78,17 +79,16 @@ def _positive_int(metadata: Dict[str, Any], key: str) -> Optional[int]:
     return None
 
 
-def _extract_middle_slice(
+def _discover_verified_plane_layout(
     ole: 'olefile.OleFileIO',
     txm_model: TxmData,
     image_stream_paths: list[list[str]],
-) -> None:
-    """Decode the middle reconstructed plane from discovered TXM image streams."""
+) -> tuple[Optional[list[tuple[list[str], int]]], Optional[str]]:
+    """Return a complete verified mapping of image streams to plane counts."""
     width = _positive_int(txm_model.image_info, 'ImageWidth')
     height = _positive_int(txm_model.image_info, 'ImageHeight')
     if width is None or height is None:
-        txm_model.preview_error = 'Missing valid ImageWidth or ImageHeight metadata.'
-        return
+        return None, 'Missing valid ImageWidth or ImageHeight metadata.'
 
     bytes_per_plane = width * height * np.dtype(np.uint16).itemsize
     stream_planes = []
@@ -96,16 +96,37 @@ def _extract_middle_slice(
         try:
             stream_size = ole.get_size(path)
         except Exception:
-            continue
+            return None, 'No ImageData stream contains complete uint16 image planes.'
+
         if stream_size <= 0 or stream_size % bytes_per_plane != 0:
-            continue
+            return None, 'No ImageData stream contains complete uint16 image planes.'
+
         stream_planes.append((path, stream_size // bytes_per_plane))
 
     total_planes = sum(plane_count for _, plane_count in stream_planes)
     if total_planes == 0:
-        txm_model.preview_error = (
-            'No ImageData stream contains complete uint16 image planes.'
-        )
+        return None, 'No ImageData stream contains complete uint16 image planes.'
+
+    txm_model.total_planes = total_planes
+    return stream_planes, None
+
+
+def _extract_middle_slice(
+    ole: 'olefile.OleFileIO',
+    txm_model: TxmData,
+    stream_planes: Optional[list[tuple[list[str], int]]],
+    layout_error: Optional[str],
+) -> None:
+    """Decode the middle reconstructed plane from discovered TXM image streams."""
+    total_planes = txm_model.total_planes
+    if stream_planes is None or total_planes is None:
+        txm_model.preview_error = layout_error
+        return
+
+    width = _positive_int(txm_model.image_info, 'ImageWidth')
+    height = _positive_int(txm_model.image_info, 'ImageHeight')
+    if width is None or height is None:
+        txm_model.preview_error = 'Missing valid ImageWidth or ImageHeight metadata.'
         return
 
     middle_index = total_planes // 2
@@ -198,8 +219,14 @@ def read_txm(file_path: str, *, include_preview: bool = False) -> TxmData:
             txm_model.metadata["Total_ImageData_Folders"] = len(image_folders)
             txm_model.metadata["Total_3D_Slices_or_Blocks"] = sum(txm_model.image_data_summary.values())
 
+            stream_planes, layout_error = _discover_verified_plane_layout(
+                ole, txm_model, image_stream_paths
+            )
+
             if include_preview:
-                _extract_middle_slice(ole, txm_model, image_stream_paths)
+                _extract_middle_slice(
+                    ole, txm_model, stream_planes, layout_error
+                )
 
     except Exception as e:
         txm_model.metadata["extraction_error"] = str(e)
