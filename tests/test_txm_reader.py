@@ -98,6 +98,7 @@ def test_read_txm_success(mock_olefile_io, mock_is_ole, mock_exists):
     
     assert result.metadata['Total_ImageData_Folders'] == 1
     assert result.metadata['Total_3D_Slices_or_Blocks'] == 3
+    assert result.total_planes is None
     assert result.preview_image is None
     mock_ole.get_size.assert_not_called()
 
@@ -142,6 +143,7 @@ def test_read_txm_extracts_middle_slice_from_discovered_streams(
     assert result.preview_plane_index == 0
     assert result.preview_error is None
     assert result.image_data_summary == {'ImageData1': 1, 'ImageData2': 2}
+    assert result.total_planes == 3
 
 
 @patch('os.path.exists', return_value=True)
@@ -176,6 +178,7 @@ def test_read_txm_preview_supports_existing_image_number_streams(
 
     np.testing.assert_array_equal(result.preview_image, middle_slice)
     assert result.preview_stream_path == ['ImageData1', 'Image2']
+    assert result.total_planes == 3
 
 
 @patch('os.path.exists', return_value=True)
@@ -223,6 +226,75 @@ def test_read_txm_extracts_middle_slice_from_multiplane_stream(
     assert result.preview_stream_path == ['ImageData2', 'Block_2']
     assert result.preview_plane_index == 1
     assert result.preview_error is None
+    assert result.total_planes == 4
+
+
+@patch('os.path.exists', return_value=True)
+@patch('olefile.isOleFile', return_value=True)
+@patch('olefile.OleFileIO')
+def test_read_txm_reports_total_planes_without_preview(
+    mock_olefile_io, mock_is_ole, mock_exists
+):
+    """Verified plane counts are available even when preview extraction is disabled."""
+    mock_ole = MagicMock()
+    mock_olefile_io.return_value.__enter__.return_value = mock_ole
+    mock_ole.listdir.return_value = [
+        ['ImageInfo', 'ImageWidth'],
+        ['ImageInfo', 'ImageHeight'],
+        ['ImageData1', 'Block_1'],
+        ['ImageData2', 'Block_2'],
+    ]
+    stream_data = {
+        ('ImageInfo', 'ImageWidth'): struct.pack('<i', 2),
+        ('ImageInfo', 'ImageHeight'): struct.pack('<i', 2),
+    }
+    mock_ole.openstream.side_effect = lambda path: _mock_stream(
+        stream_data[tuple(path)]
+    )
+    mock_ole.get_size.side_effect = lambda path: {
+        ('ImageData1', 'Block_1'): 8,
+        ('ImageData2', 'Block_2'): 24,
+    }[tuple(path)]
+
+    result = read_txm('multiplane_without_preview.txm')
+
+    assert result.total_planes == 4
+    assert result.preview_image is None
+    assert result.preview_error is None
+
+
+@patch('os.path.exists', return_value=True)
+@patch('olefile.isOleFile', return_value=True)
+@patch('olefile.OleFileIO')
+def test_read_txm_leaves_total_planes_unset_for_unverifiable_stream(
+    mock_olefile_io, mock_is_ole, mock_exists
+):
+    """A malformed image stream prevents publishing a partial plane count."""
+    mock_ole = MagicMock()
+    mock_olefile_io.return_value.__enter__.return_value = mock_ole
+    mock_ole.listdir.return_value = [
+        ['ImageInfo', 'ImageWidth'],
+        ['ImageInfo', 'ImageHeight'],
+        ['ImageData1', 'Slice_001'],
+        ['ImageData1', 'Slice_002'],
+    ]
+    stream_data = {
+        ('ImageInfo', 'ImageWidth'): struct.pack('<i', 2),
+        ('ImageInfo', 'ImageHeight'): struct.pack('<i', 2),
+    }
+    mock_ole.openstream.side_effect = lambda path: _mock_stream(
+        stream_data[tuple(path)]
+    )
+    mock_ole.get_size.side_effect = lambda path: {
+        ('ImageData1', 'Slice_001'): 8,
+        ('ImageData1', 'Slice_002'): 7,
+    }[tuple(path)]
+
+    result = read_txm('invalid_stream_size.txm')
+
+    assert result.total_planes is None
+    assert result.preview_image is None
+    assert result.preview_error is None
 
 
 @patch('os.path.exists', return_value=True)
@@ -240,6 +312,7 @@ def test_read_txm_preview_requires_verified_dimensions(
 
     assert result.preview_image is None
     assert result.preview_error == 'Missing valid ImageWidth or ImageHeight metadata.'
+    assert result.total_planes is None
     mock_ole.get_size.assert_not_called()
     mock_ole.openstream.assert_not_called()
 
@@ -272,3 +345,4 @@ def test_read_txm_preview_failure_does_not_fail_metadata_extraction(
     assert 'extraction_error' not in result.metadata
     assert result.preview_image is None
     assert result.preview_error == 'No ImageData stream contains complete uint16 image planes.'
+    assert result.total_planes is None
