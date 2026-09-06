@@ -52,6 +52,17 @@ def _decode_ole_stream(data: bytes) -> Any:
         # Return both so the consuming plugin can pick the correct physical unit
         return {"int32": val_int, "float32": round(val_float, 6)}
 
+    # A short UTF-8 C string can also be exactly eight bytes long. Restrict this
+    # exception to a single trailing NUL and printable text so binary numeric
+    # payloads with their usual NUL padding continue to use numeric decoding.
+    if length == 8 and data.endswith(b'\x00') and not data.endswith(b'\x00\x00'):
+        try:
+            text = data[:-1].decode('utf-8')
+            if text and text.isprintable():
+                return text
+        except UnicodeDecodeError:
+            pass
+
     # 2. Number Decoding: 8-Byte (Int64 or Double64)
     if length == 8:
         val_int64 = struct.unpack('<q', data)[0]

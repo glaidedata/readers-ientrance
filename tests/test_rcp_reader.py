@@ -1,7 +1,36 @@
 import pytest
 import struct
 from unittest.mock import patch, MagicMock
-from readers_ientrance.rcp_reader import read_rcp, RcpData, RecipePoint
+from readers_ientrance.rcp_reader import _decode_ole_stream, read_rcp, RcpData, RecipePoint
+
+
+def test_decode_ole_stream_preserves_short_null_terminated_utf8_string():
+    """An eight-byte UTF-8 C string is not mistaken for a numeric value."""
+    assert _decode_ole_stream(b'warmupA\x00') == 'warmupA'
+
+
+def test_decode_ole_stream_preserves_four_byte_numeric_values():
+    """Four-byte binary values retain their dual numeric representation."""
+    assert _decode_ole_stream(struct.pack('<i', 4)) == {
+        'int32': 4,
+        'float32': 0.0,
+    }
+
+
+def test_decode_ole_stream_preserves_eight_byte_numeric_values():
+    """Eight-byte binary values retain their dual numeric representation."""
+    assert _decode_ole_stream(struct.pack('<q', 42)) == {
+        'int64': 42,
+        'double64': 0.0,
+    }
+
+
+def test_decode_ole_stream_keeps_non_printable_eight_byte_data_numeric():
+    """A trailing NUL alone cannot make non-printable binary data text."""
+    assert _decode_ole_stream(bytes([7, 6, 5, 4, 3, 2, 1, 0])) == {
+        'int64': 283686952306183,
+        'double64': 0.0,
+    }
 
 def test_read_rcp_file_not_found():
     """Test that the reader handles missing files gracefully."""
